@@ -14,17 +14,25 @@ goodreads_service = OAuth1Service(
     base_url='https://www.goodreads.com/'
 )
 
+def login_required(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if 'user_id' not in session:
+            return redirect(url_for('login'))
+        return f(*args, **kwargs)
+    return decorated_function
+
 @app.route('/')
+@login_required
 def run():
-    return 'Hello World!<br><a href="./login"><button>Login</button></a>'
+    return 'Hello World!<br><a href="{url}"><button>Login</button></a>'.format(url=url_for('login'))
 
 @app.route('/login')
 def login():
-    if 'access_token' in session and 'access_token_secret' in session:
-        return '<a href="/books_read"><button>Continue</button></a>'
+    if 'access_token' in session and 'access_token_secret' in session and 'user_id' in session:
+        return '<a href="{url}"><button>Continue</button></a>'.format(url=url_for('get_read_list', id=session['user_id']))
 
     session['request_token'], session['request_token_secret'] = goodreads_service.get_request_token(header_auth=True)
-
     authorize_url = goodreads_service.get_authorize_url(session['request_token'])
 
     return """
@@ -41,18 +49,18 @@ def login_callback():
 
     session['access_token'] = oauth_session.access_token
     session['access_token_secret'] = oauth_session.access_token_secret
+    session['user_id'] = get_user_id()
 
-    return redirect(url_for('get_read_book_list'))
+    return redirect(url_for('get_read_list', id=session['user_id']))
 
-@app.route('/books_read')
-def get_read_book_list():
-    user_id = get_user_id()
-    url = 'https://www.goodreads.com/review/list/{id}.xml?key={key}&v=2&shelf=read&per_page=200&page=1'.format(id=user_id, key=cfg.goodreads['key'])
+@app.route('/users/<id>/readList')
+@login_required
+def get_read_list(id):
+    url = 'https://www.goodreads.com/review/list/{id}.xml?key={key}&v=2&shelf=read&per_page=200&page=1'.format(id=id, key=cfg.goodreads['key'])
 
     json_data = get_json_data(url)
     return json_data['GoodreadsResponse']['reviews']
 
-@app.route('/id')
 def get_user_id():
     url = 'https://www.goodreads.com/api/auth_user'
     json_data = get_json_data(url)
